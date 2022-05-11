@@ -64,8 +64,7 @@ void printProcessList(process ** process_list){
 
   //TERMINATED leading procceses;
   while(curr && curr->status == TERMINATED){
-    printf("%d %s %s\n", curr->pid, curr->cmd->arguments[0], curr->status == TERMINATED ? "TERMINATED" :
-	 																																			curr->status == SUSPENDED ? "SUSPENDED" : "RUNNING");
+    printf("%d %s %s\n", curr->pid, curr->cmd->arguments[0], "TERMINATED");
     prev = curr->next;
     freeSingleProcess(curr);
     curr = prev;
@@ -73,6 +72,8 @@ void printProcessList(process ** process_list){
   }
 
   if(!curr) return; //all process in list were TERMINATED
+  printf("%d %s %s\n", curr->pid, curr->cmd->arguments[0], curr->status == TERMINATED ? "TERMINATED" :
+                                                              curr->status == SUSPENDED ? "SUSPENDED" : "RUNNING");
   curr = curr->next;
 
 	while(curr){
@@ -121,14 +122,16 @@ void updateProcessList(process **process_list){
   process * runner = *process_list;
 
   while(runner){
-    int status;
-     waitpid(runner->pid, &status, WNOHANG | WUNTRACED | WCONTINUED);
-     if(WIFEXITED(status) || WIFSIGNALED(status)){
-       runner->status = TERMINATED;
-     } else if(WIFSTOPPED(status)){
-       runner->status = SUSPENDED;
-     } else if(WIFCONTINUED(status)){
-       runner->status = RUNNING;
+     int status;
+     pid_t child_pid = waitpid(runner->pid, &status, WNOHANG | WUNTRACED | WCONTINUED);
+     if(child_pid == runner->pid){
+       if(WIFEXITED(status) || WIFSIGNALED(status)){
+         runner->status = TERMINATED;
+       } else if(WIFSTOPPED(status)){
+         runner->status = SUSPENDED;
+       } else {
+         runner->status = RUNNING;
+       }
      }
      runner = runner->next;
   }
@@ -145,7 +148,11 @@ int execute(cmdLine *cmd_line){
 				fprintf(stderr, "PID num: %d, Executing command: %s\n", pid, cmd_line->arguments[0]);
 			};
 			addProcess(&shell_process_list, cmd_line, pid);
-			waitpid(pid, &status, (1 - cmd_line->blocking) | WUNTRACED);
+      if(cmd_line->blocking){
+        waitpid(pid, &status, WUNTRACED);
+        updateProcessStatus(shell_process_list, pid, TERMINATED);
+      }
+
 			return status;
 		} else if(execvp(cmd_line->arguments[0], cmd_line->arguments) < 0){
 			//child process
